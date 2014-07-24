@@ -11,6 +11,7 @@ if ARGV.include?('-v')
   exit
 end
 
+require 'json'
 require 'webrick'
 require 'webrick/https'
 
@@ -27,22 +28,42 @@ dotjs = Class.new(WEBrick::HTTPServlet::AbstractServlet) do
   end
 
   def build_body(path)
-    files = [File.expand_path("default.js")]
-    paths = path.gsub('/','').split('.')
+    files = ["default"]
+    paths = path.sub(/\.js\Z/, '').gsub('/','').split('.')
 
     until paths.empty?
       file = File.expand_path(paths.join('.'))
-      files << file if File.file?(file)
+      files.unshift file
       paths.shift
     end
 
     body = "// dotjs is working! //\n"
 
     files.each do |file|
-      body << File.read(file) + "\n" if File.file?(file)
+      body << (js(file) || coffee(file) || "// #{file}.(js|coffee): not found\n")
     end
 
     body
+  end
+
+  def js file
+    if File.file? "#{file}.js"
+      "// #{file}.js:\n" << File.read("#{file}.js") << "\n"
+    end
+  end
+
+  def coffee file
+    if File.exist? "#{file}.coffee"
+      output = `/usr/local/bin/coffee -bp #{file}.coffee`
+      case $?.exitstatus
+        when 0
+          "// #{file}.coffee:\n#{output}\n"
+        when 127
+          "console.error('dotjs — `coffee\\' executable not found, path: %s', #{ENV["PATH"].to_json}');\n"
+        else
+          "console.error('dotjs - `coffee\\' error:', #{output.to_json});\n"
+      end
+    end
   end
 
   def detect_origin(req)
