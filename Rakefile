@@ -46,7 +46,7 @@ namespace :install do
     agent = File.join(agent_dir, plist)
     Dir.mkdir(agent_dir) unless File.exists?(agent_dir)
     File.open(agent, "w") do |f|
-      f.puts ERB.new(IO.read(plist)).result(binding)
+      f.puts ERB.new(IO.read("#{plist}.erb")).result(binding)
     end
 
     chmod 0644, agent
