@@ -108,6 +108,7 @@ unless ssl_key and ssl_cert
 end
 
 server_options = {
+  :DoNotListen => true,
   :BindAddress => "127.0.0.1",
   :Port => 3131,
   :AccessLog => [],
@@ -122,5 +123,44 @@ server.mount('/', dotjs)
 %w( INT TERM ).each do |sig|
   trap(sig) { server.shutdown }
 end
+
+require 'fiddle'
+require 'fiddle/import'
+require 'pp'
+
+module Launch
+  extend Fiddle::Importer
+
+  dlload '/usr/lib/system/liblaunch.dylib'
+
+  @launch_activate_socket = import_function(*parse_signature("int launch_activate_socket(const char *name, int **fds, size_t *cnt)"))
+  def self.launch_activate_socket(name)
+    raise ArgumentError, "name must be a string" unless name.is_a? String
+
+    fds_ptr = Fiddle::Pointer.new(0, Fiddle::RUBY_FREE)
+    count_ptr = Fiddle::Pointer.malloc(Fiddle::SIZEOF_SIZE_T, Fiddle::RUBY_FREE)
+
+    result = @launch_activate_socket.call(name, fds_ptr.ref, count_ptr)
+
+    raise "launch_activate_socket returned #{result}" unless result.zero?
+
+    count = count_ptr.to_s(Fiddle::SIZEOF_SIZE_T).unpack("I!").first
+    fds = fds_ptr.to_s(Fiddle::SIZEOF_INT * count).unpack("i#{count}")
+
+    fds
+  end
+end
+
+fds = Launch.launch_activate_socket("dotjs")
+
+tcp_server = TCPServer.for_fd(fds.first)
+
+ssl_context = OpenSSL::SSL::SSLContext.new
+ssl_context.key = ssl_key
+ssl_context.cert = ssl_cert
+
+ssl_server = OpenSSL::SSL::SSLServer.new(tcp_server, ssl_context)
+
+server.instance_variable_get(:@listeners) << ssl_server
 
 server.start
