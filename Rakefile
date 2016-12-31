@@ -6,7 +6,7 @@ task :install => 'install:all'
 DAEMON_INSTALL_DIR = ENV['PREFIX'] || "/usr/local/bin"
 
 namespace :install do
-  task :all => [ :prompt, :daemon, :create_dir, :agent, :chrome, :done ]
+  task :all => [ :prompt, :daemon, :create_dir, :agent, :done ]
 
   task :prompt do
     puts "\e[1m\e[32mdotjs\e[0m"
@@ -68,19 +68,13 @@ namespace :install do
       chmod 0755, js_dir
     end
   end
-
-  desc "Install Google Chrome extension"
-  task :chrome do
-    puts "", "\e[31mIMPORTANT!\e[0m Install the Google Chrome extension:"
-    puts "http://bit.ly/dotjs", ""
-  end
 end
 
 desc "Uninstall dotjs"
 task :uninstall => 'uninstall:all'
 
 namespace :uninstall do
-  task :all => [ :prompt, :daemon, :agent, :chrome, :done ]
+  task :all => [ :prompt, :daemon, :agent, :done ]
 
   task :prompt do
     puts "\e[1m\e[32mdotjs\e[0m"
@@ -126,12 +120,6 @@ namespace :uninstall do
   desc "Uninstall dotjs daemon"
   task :daemon => :install_dir_writeable do
     rm File.join(DAEMON_INSTALL_DIR, "djsd"), :verbose => true
-  end
-
-  desc "Uninstall Google Chrome extension"
-  task :chrome do
-    puts "\e[1mplease uninstall the google chrome extension manually:\e[0m"
-    puts "google chrome > window > extensions > dotjs > uninstall"
   end
 end
 
