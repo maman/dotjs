@@ -31,7 +31,7 @@ namespace :install do
   task :done do
     if system("curl -k https://localhost:3131 &> /dev/null")
       puts "\e[1m\e[32mdotjs installation worked\e[0m"
-      puts "open https://localhost:3131 in chrome to enable ssl"
+      puts "open https://localhost:3131 in your browser to enable ssl"
       puts "then drop files like google.com.js in ~/.js and enjoy hacking the web"
     else
       puts "\e[31mdotjs installation failed\e[0m"
