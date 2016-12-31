@@ -1,4 +1,4 @@
-#!/usr/bin/env ruby
+#!/usr/bin/ruby
 
 if (%w( -h --help -help help ) & ARGV).length > 0
   puts "usage: djsd [-hv]"
@@ -11,6 +11,8 @@ if ARGV.include?('-v')
   exit
 end
 
+require 'json'
+require 'openssl'
 require 'webrick'
 require 'webrick/https'
 
@@ -27,22 +29,42 @@ dotjs = Class.new(WEBrick::HTTPServlet::AbstractServlet) do
   end
 
   def build_body(path)
-    files = [File.expand_path("default.js")]
-    paths = path.gsub('/','').split('.')
+    files = ["default"]
+    paths = path.sub(/\.js\Z/, '').gsub('/','').split('.')
 
     until paths.empty?
       file = File.expand_path(paths.join('.'))
-      files << file if File.file?(file)
+      files.unshift file
       paths.shift
     end
 
     body = "// dotjs is working! //\n"
 
     files.each do |file|
-      body << File.read(file) + "\n" if File.file?(file)
+      body << (js(file) || coffee(file) || "// #{file}.(js|coffee): not found\n")
     end
 
     body
+  end
+
+  def js file
+    if File.file? "#{file}.js"
+      "// #{file}.js:\n" << File.read("#{file}.js") << "\n"
+    end
+  end
+
+  def coffee file
+    if File.exist? "#{file}.coffee"
+      output = `/usr/local/bin/coffee -bp #{file}.coffee`
+      case $?.exitstatus
+        when 0
+          "// #{file}.coffee:\n#{output}\n"
+        when 127
+          "console.error('dotjs — `coffee\\' executable not found, path: %s', #{ENV["PATH"].to_json}');\n"
+        else
+          "console.error('dotjs - `coffee\\' error:', #{output.to_json});\n"
+      end
+    end
   end
 
   def detect_origin(req)
@@ -56,19 +78,43 @@ dotjs = Class.new(WEBrick::HTTPServlet::AbstractServlet) do
   end
 end
 
-ssl_info = DATA.read
-ssl_cert = ssl_info.scan(/(-----BEGIN CERTIFICATE-----.+?-----END CERTIFICATE-----)/m)[0][0]
-ssl_key  = ssl_info.scan(/(-----BEGIN RSA PRIVATE KEY-----.+?-----END RSA PRIVATE KEY-----)/m)[0][0]
+ssl_key = ssl_cert = nil
+
+home_path = ENV.fetch("HOME")
+config_path = File.join(home_path, ".config", "dotjs")
+ssl_key_path = File.join(config_path, "server.key")
+ssl_cert_path = File.join(config_path, "server.crt")
+
+if File.exist? ssl_key_path and File.exist? ssl_cert_path
+  ssl_key = OpenSSL::PKey.read(IO.read(ssl_key_path))
+  ssl_cert = OpenSSL::X509::Certificate.new(IO.read(ssl_cert_path))
+end
+
+unless ssl_key and ssl_cert
+  ssl_key = OpenSSL::PKey::RSA.generate(2048)
+
+  ssl_cert = OpenSSL::X509::Certificate.new
+  ssl_cert.version = 2
+  ssl_cert.serial = 1
+  ssl_cert.subject = ssl_cert.issuer = OpenSSL::X509::Name.new([["CN", "localhost"]])
+  ssl_cert.public_key = ssl_key.public_key
+  ssl_cert.not_before = Time.now
+  ssl_cert.not_after = Time.now + (360 * 24 * 3600)
+  ssl_cert.sign ssl_key, OpenSSL::Digest::SHA256.new
+
+  system "mkdir", "-p", config_path
+  IO.write(ssl_key_path, ssl_key.to_pem, :perm => 0600)
+  IO.write(ssl_cert_path, ssl_cert.to_pem)
+end
 
 server_options = {
+  :DoNotListen => true,
   :BindAddress => "127.0.0.1",
   :Port => 3131,
   :AccessLog => [],
   :SSLEnable => true,
-  :SSLVerifyClient => OpenSSL::SSL::VERIFY_NONE,
-  :SSLPrivateKey => OpenSSL::PKey::RSA.new(ssl_key),
-  :SSLCertificate => OpenSSL::X509::Certificate.new(ssl_cert),
-  :SSLCertName => [["CN", WEBrick::Utils::getservername]],
+  :SSLPrivateKey => ssl_key,
+  :SSLCertificate => ssl_cert,
 }
 
 server = WEBrick::HTTPServer.new(server_options)
@@ -78,35 +124,43 @@ server.mount('/', dotjs)
   trap(sig) { server.shutdown }
 end
 
-server.start
+require 'fiddle'
+require 'fiddle/import'
+require 'pp'
 
-__END__
------BEGIN CERTIFICATE-----
-MIICHTCCAYYCCQClZE2IvNWbtDANBgkqhkiG9w0BAQUFADBTMQswCQYDVQQGEwJV
-UzETMBEGA1UECBMKQ2FsaWZvcm5pYTELMAkGA1UEBxMCTEExDjAMBgNVBAoTBWRv
-dGpzMRIwEAYDVQQDEwlsb2NhbGhvc3QwHhcNMTMwMjIwMjMzNzUzWhcNMjIxMTIw
-MjMzNzUzWjBTMQswCQYDVQQGEwJVUzETMBEGA1UECBMKQ2FsaWZvcm5pYTELMAkG
-A1UEBxMCTEExDjAMBgNVBAoTBWRvdGpzMRIwEAYDVQQDEwlsb2NhbGhvc3QwgZ8w
-DQYJKoZIhvcNAQEBBQADgY0AMIGJAoGBAMNgNijoFmD5TX7NMd2pGEeEmwRifWRc
-45jVS1a5kUncfRfgr4ehygPQDS2XrUkd+OYneFIXOcANW9WAWAlfeLs8DiSgs+9m
-tuVjZ58RAsRXkW7H3vqQv5sAxmmwwVGN9WfKW+II/xLhpMtVGQH+MOucGbssODzk
-0vwXEGSeEqYdAgMBAAEwDQYJKoZIhvcNAQEFBQADgYEAgCW2RBZgDMikQenSF3sz
-u7KDe8+t8qnEFvrwCEpLUzvedSZxkaKzHrrCnIYlDnXRZBveKngWoejGzqtyIXup
-YKzBZaZWH8cV72RdDwgM1owWi3KZBKpxfphYkWSRRx59djHZY/Yjudnb3oT/3c8/
-NHsFbLbrZaGriLshIwrjEGs=
------END CERTIFICATE-----
------BEGIN RSA PRIVATE KEY-----
-MIICXAIBAAKBgQDDYDYo6BZg+U1+zTHdqRhHhJsEYn1kXOOY1UtWuZFJ3H0X4K+H
-ocoD0A0tl61JHfjmJ3hSFznADVvVgFgJX3i7PA4koLPvZrblY2efEQLEV5Fux976
-kL+bAMZpsMFRjfVnylviCP8S4aTLVRkB/jDrnBm7LDg85NL8FxBknhKmHQIDAQAB
-AoGAZDw9LRl9Ob1No+t0VOuG+FIxEbvR5ya84dE0OMc1ofZL+28bvvMjaHdZ+3Ug
-wy1sX/AKC9u8liqEXfHduNlRX59WfhS1DBIqpezpg3Hj35sCmuGvtiJVMHbZBX0I
-S0P14vXxaGJ/Sw04CgbGJs08P5ITTleZ9HioHhCkUObP5kUCQQD3auQTo/oqbNXz
-FbL1ckP65wUz7ean+YcXDYgKM2jnyEfATMWjjQkMEzO4MJdfuLi+5UbEfup1c1zB
-SmIijzN7AkEAyicud3X+HoV2dwRPzsquvR27fjEsIttzjNJ0Kcm+YAtIQcJQti9e
-E9OMjSsxa8LQ1V8HMWmDYyoAEhdYG1BtRwJAczlTmJYANmvTQ87yNf6ODDY0pReB
-GO9La4AAwAdrLq6GQ9c9H8rZ0MbMilYO2SRU3Yo3Z+FXXXVpWBdFFqUsKwJAKNYn
-bdx5HENLvhkx4g1RpUR3VrOqPdRlEEKHUtW9TnuY+ie91D/XWlv23aGnFyTAuQm8
-U0AEWajnYMA0fTgPCwJBAI1J6nOjlE5jcKKzBAE33iL8lXj5FlGX3hhPM4jm3BCN
-bpmhcfRVwyhqWwYChEQ5Y25Lv0i7Lxpud/UbLE0x/x8=
------END RSA PRIVATE KEY-----
+module Launch
+  extend Fiddle::Importer
+
+  dlload '/usr/lib/system/liblaunch.dylib'
+
+  @launch_activate_socket = import_function(*parse_signature("int launch_activate_socket(const char *name, int **fds, size_t *cnt)"))
+  def self.launch_activate_socket(name)
+    raise ArgumentError, "name must be a string" unless name.is_a? String
+
+    fds_ptr = Fiddle::Pointer.new(0, Fiddle::RUBY_FREE)
+    count_ptr = Fiddle::Pointer.malloc(Fiddle::SIZEOF_SIZE_T, Fiddle::RUBY_FREE)
+
+    result = @launch_activate_socket.call(name, fds_ptr.ref, count_ptr)
+
+    raise "launch_activate_socket returned #{result}" unless result.zero?
+
+    count = count_ptr.to_s(Fiddle::SIZEOF_SIZE_T).unpack("I!").first
+    fds = fds_ptr.to_s(Fiddle::SIZEOF_INT * count).unpack("i#{count}")
+
+    fds
+  end
+end
+
+fds = Launch.launch_activate_socket("dotjs")
+
+tcp_server = TCPServer.for_fd(fds.first)
+
+ssl_context = OpenSSL::SSL::SSLContext.new
+ssl_context.key = ssl_key
+ssl_context.cert = ssl_cert
+
+ssl_server = OpenSSL::SSL::SSLServer.new(tcp_server, ssl_context)
+
+server.instance_variable_get(:@listeners) << ssl_server
+
+server.start

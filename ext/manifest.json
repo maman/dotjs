@@ -11,8 +11,10 @@
     "matches":    ["http://*/*", "https://*/*"],
     "js":         ["jquery.js", "dotjs.js"]
   }],
+  "web_accessible_resources": ["jquery.min.map"],
   "permissions": [
-    "tabs"
-  ],
-   "web_accessible_resources": ["jquery.min.map"]
+    "tabs",
+    "http://*/*",
+    "https://*/*"
+  ]
 }

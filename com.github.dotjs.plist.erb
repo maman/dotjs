@@ -1,0 +1,35 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+  <key>Label</key>
+  <string>com.github.dotjs</string>
+  <key>ProgramArguments</key>
+  <array>
+    <string><%= DAEMON_INSTALL_DIR %>/djsd</string>
+  </array>
+  <key>WorkingDirectory</key>
+  <string><%= File.join(ENV["HOME"], ".js") %></string>
+  <key>EnvironmentVariables</key>
+  <dict>
+    <key>PATH</key>
+    <string><%= ENV["PATH"] %></string>
+  </dict>
+  <key>Sockets</key>
+  <dict>
+    <key>dotjs</key>
+    <dict>
+      <key>SockFamily</key>
+      <string>IPv4</string>
+      <key>SockNodeName</key>
+      <string>127.0.0.1</string>
+      <key>SockServiceName</key>
+      <integer>3131</integer>
+    </dict>
+  </dict>
+  <key>StandardOutPath</key>
+  <string><%= File.join(ENV["HOME"], "Library", "Logs", "dotjs.log") %></string>
+  <key>StandardErrorPath</key>
+  <string><%= File.join(ENV["HOME"], "Library", "Logs", "dotjs.log") %></string>
+</dict>
+</plist>
